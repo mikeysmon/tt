@@ -207,30 +207,46 @@ var e,t,i="function"==typeof Symbol?Symbol:{},n=i.iterator||"@@iterator",a=i.toS
     for (var i = 0; i < els.length; i++) forceCenterElement(els[i]);
   }
   var styleObserver = new MutationObserver(function(mutations) {
+    var needsCenter = false;
     for (var i = 0; i < mutations.length; i++) {
-      var nodes = mutations[i].addedNodes;
-      for (var j = 0; j < nodes.length; j++) {
-        var n = nodes[j];
-        if (n.nodeType !== 1) continue;
-        if (n.tagName === 'VIDEO') { hookTextTracks(); continue; }
-        var cn = (n.className || '').toString().toLowerCase();
-        if (cn.indexOf('caption') !== -1) forceCenterElement(n);
+      var m = mutations[i];
+      if (m.type === 'attributes' && m.target && m.target.nodeType === 1) {
+        var acn = (m.target.className || '').toString().toLowerCase();
+        if (acn.indexOf('caption') !== -1) { forceCenterElement(m.target); needsCenter = true; }
+        else if (m.target.parentElement) {
+          var pcn = (m.target.parentElement.className || '').toString().toLowerCase();
+          if (pcn.indexOf('caption') !== -1) {
+            m.target.style.setProperty('text-align', 'center', 'important');
+            m.target.style.setProperty('margin-left', 'auto', 'important');
+            m.target.style.setProperty('margin-right', 'auto', 'important');
+            needsCenter = true;
+          }
+        }
+      }
+      if (m.addedNodes) {
+        for (var j = 0; j < m.addedNodes.length; j++) {
+          var n = m.addedNodes[j];
+          if (n.nodeType !== 1) continue;
+          if (n.tagName === 'VIDEO') { hookTextTracks(); continue; }
+          var cn = (n.className || '').toString().toLowerCase();
+          if (cn.indexOf('caption') !== -1) { forceCenterElement(n); needsCenter = true; }
+        }
       }
     }
+    if (needsCenter) centerAllCues();
     hookTextTracks();
-    centerAllCues();
   });
 
   // 5. Start everything
   function startAll() {
     var target = document.body || document.documentElement;
     if (target) {
-      styleObserver.observe(target, { childList: true, subtree: true });
+      styleObserver.observe(target, { childList: true, subtree: true, attributes: true, attributeFilter: ['style', 'class'] });
       hookTextTracks();
       scanAndCenter();
       centerAllCues();
-      // Polling backup every 2 seconds
-      setInterval(function() { scanAndCenter(); centerAllCues(); hookTextTracks(); }, 2000);
+      // Fast polling backup every 500ms to catch YouTube position resets
+      setInterval(function() { scanAndCenter(); centerAllCues(); hookTextTracks(); }, 500);
     } else {
       setTimeout(startAll, 500);
     }
