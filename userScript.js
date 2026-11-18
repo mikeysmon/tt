@@ -92,14 +92,42 @@ var e,t,i="function"==typeof Symbol?Symbol:{},n=i.iterator||"@@iterator",a=i.toS
   }
 })();
 
-// Netflix Caption Style Injector
+// Netflix Caption Style + Center Fix
 (function() {
+  // 1. Override VTTCue prototype to force center alignment at browser level
+  try {
+    var CueProto = window.VTTCue && window.VTTCue.prototype;
+    if (!CueProto) CueProto = window.TextTrackCue && window.TextTrackCue.prototype;
+    if (CueProto) {
+      var origAlignDesc = Object.getOwnPropertyDescriptor(CueProto, 'align');
+      var origPosDesc = Object.getOwnPropertyDescriptor(CueProto, 'position');
+      if (origAlignDesc && origAlignDesc.set) {
+        Object.defineProperty(CueProto, 'align', {
+          get: function() { return 'center'; },
+          set: function(v) { if (origAlignDesc.set) origAlignDesc.set.call(this, 'center'); },
+          configurable: true
+        });
+      }
+      if (origPosDesc && origPosDesc.set) {
+        Object.defineProperty(CueProto, 'position', {
+          get: function() { return 'auto'; },
+          set: function(v) { if (origPosDesc.set) origPosDesc.set.call(this, 'auto'); },
+          configurable: true
+        });
+      }
+      console.log('[NetflixCaptions] VTTCue prototype overridden');
+    }
+  } catch(e) { console.log('[NetflixCaptions] VTTCue override failed: ' + e); }
+
+  // 2. CSS injection - multiple strategies for centering
   var css = [
-    '[class*="caption"] { text-align: center !important; width: 100% !important; left: 0 !important; right: 0 !important; }',
-    '[class*="caption"] * { text-align: center !important; }',
+    '[class*="caption"] { text-align: center !important; width: 100% !important; left: 0 !important; right: 0 !important; display: flex !important; flex-direction: column !important; align-items: center !important; justify-content: flex-end !important; }',
+    '[class*="caption"] > * { text-align: center !important; margin-left: auto !important; margin-right: auto !important; width: auto !important; max-width: 80% !important; }',
+    '[class*="caption"] > * > * { text-align: center !important; }',
     '.caption-window { background: transparent !important; text-align: center !important; width: 100% !important; left: 0 !important; right: 0 !important; }',
     '.ytp-caption-segment { color: #FFFFFF !important; font-weight: 700 !important; background: transparent !important; text-shadow: 0px 0px 4px rgba(0,0,0,0.9), 0px 1px 4px rgba(0,0,0,0.7), 0px 2px 6px rgba(0,0,0,0.5) !important; font-family: "Trebuchet MS", system-ui, sans-serif !important; }',
-    'video::cue { color: #FFFFFF !important; background: transparent !important; font-family: "Trebuchet MS", system-ui, sans-serif !important; text-shadow: 0px 0px 4px rgba(0,0,0,0.9), 0px 1px 4px rgba(0,0,0,0.7), 0px 2px 6px rgba(0,0,0,0.5) !important; font-size: 110% !important; }'
+    '.caption-window span, .caption-window div { margin-left: auto !important; margin-right: auto !important; text-align: center !important; }',
+    'video::cue { color: #FFFFFF !important; background: transparent !important; font-family: "Trebuchet MS", system-ui, sans-serif !important; text-shadow: 0px 0px 4px rgba(0,0,0,0.9), 0px 1px 4px rgba(0,0,0,0.7), 0px 2px 6px rgba(0,0,0,0.5) !important; font-size: 110% !important; text-align: center !important; }'
   ].join('\n');
   function injectStyle() {
     var style = document.createElement('style');
@@ -110,32 +138,74 @@ var e,t,i="function"==typeof Symbol?Symbol:{},n=i.iterator||"@@iterator",a=i.toS
   if (document.head) { injectStyle(); }
   else { document.addEventListener('DOMContentLoaded', injectStyle); }
 
-  // Center captions via TextTrack cue API (works when captions are native VTT)
+  // 3. Center cues via TextTrack API
   function centerCues(track) {
     if (!track || !track.activeCues) return;
     for (var i = 0; i < track.activeCues.length; i++) {
       var cue = track.activeCues[i];
-      if (cue.align !== 'center') cue.align = 'center';
-      if (typeof cue.position === 'number') cue.position = 50;
-      if (cue.positionAlign) cue.positionAlign = 'center';
+      try { cue.align = 'center'; } catch(e) {}
+      try { cue.position = 'auto'; } catch(e) {}
+      try { cue.positionAlign = 'center'; } catch(e) {}
+      try { cue.line = 'auto'; } catch(e) {}
+    }
+  }
+  function centerAllCues() {
+    var videos = document.querySelectorAll('video');
+    for (var v = 0; v < videos.length; v++) {
+      var tt = videos[v].textTracks;
+      if (!tt) continue;
+      for (var t = 0; t < tt.length; t++) {
+        var track = tt[t];
+        centerCues(track);
+        if (track.cues) {
+          for (var c = 0; c < track.cues.length; c++) {
+            try { track.cues[c].align = 'center'; } catch(e) {}
+            try { track.cues[c].position = 'auto'; } catch(e) {}
+          }
+        }
+      }
     }
   }
   function hookTextTracks() {
     var videos = document.querySelectorAll('video');
-    videos.forEach(function(video) {
-      if (video._captionHooked) return;
-      video._captionHooked = true;
+    for (var v = 0; v < videos.length; v++) {
+      var video = videos[v];
+      if (video._captionHooked2) continue;
+      video._captionHooked2 = true;
       var tt = video.textTracks;
-      if (!tt) return;
+      if (!tt) continue;
       for (var i = 0; i < tt.length; i++) {
         tt[i].addEventListener('cuechange', function() { centerCues(this); });
       }
       tt.addEventListener('addtrack', function(e) {
         e.track.addEventListener('cuechange', function() { centerCues(this); });
+        centerCues(e.track);
       });
-    });
+    }
   }
-  // Also force-center any caption DOM elements via MutationObserver
+
+  // 4. Force-center caption DOM elements
+  function forceCenterElement(el) {
+    el.style.setProperty('text-align', 'center', 'important');
+    el.style.setProperty('width', '100%', 'important');
+    el.style.setProperty('left', '0', 'important');
+    el.style.setProperty('right', '0', 'important');
+    el.style.setProperty('display', 'flex', 'important');
+    el.style.setProperty('flex-direction', 'column', 'important');
+    el.style.setProperty('align-items', 'center', 'important');
+    var kids = el.children;
+    for (var k = 0; k < kids.length; k++) {
+      kids[k].style.setProperty('text-align', 'center', 'important');
+      kids[k].style.setProperty('margin-left', 'auto', 'important');
+      kids[k].style.setProperty('margin-right', 'auto', 'important');
+    }
+  }
+  function scanAndCenter() {
+    var els = document.querySelectorAll('[class*="caption"]');
+    for (var i = 0; i < els.length; i++) forceCenterElement(els[i]);
+    els = document.querySelectorAll('.caption-window');
+    for (var i = 0; i < els.length; i++) forceCenterElement(els[i]);
+  }
   var styleObserver = new MutationObserver(function(mutations) {
     for (var i = 0; i < mutations.length; i++) {
       var nodes = mutations[i].addedNodes;
@@ -144,27 +214,30 @@ var e,t,i="function"==typeof Symbol?Symbol:{},n=i.iterator||"@@iterator",a=i.toS
         if (n.nodeType !== 1) continue;
         if (n.tagName === 'VIDEO') { hookTextTracks(); continue; }
         var cn = (n.className || '').toString().toLowerCase();
-        if (cn.indexOf('caption') !== -1) {
-          n.style.setProperty('text-align', 'center', 'important');
-          n.style.setProperty('width', '100%', 'important');
-          n.style.setProperty('left', '0', 'important');
-          var kids = n.querySelectorAll('*');
-          for (var k = 0; k < kids.length; k++) {
-            kids[k].style.setProperty('text-align', 'center', 'important');
-          }
-        }
+        if (cn.indexOf('caption') !== -1) forceCenterElement(n);
       }
     }
     hookTextTracks();
+    centerAllCues();
   });
-  var target = document.body || document.documentElement;
-  if (target) {
-    styleObserver.observe(target, { childList: true, subtree: true });
-    hookTextTracks();
-  } else {
-    document.addEventListener('DOMContentLoaded', function() {
-      styleObserver.observe(document.body, { childList: true, subtree: true });
+
+  // 5. Start everything
+  function startAll() {
+    var target = document.body || document.documentElement;
+    if (target) {
+      styleObserver.observe(target, { childList: true, subtree: true });
       hookTextTracks();
-    });
+      scanAndCenter();
+      centerAllCues();
+      // Polling backup every 2 seconds
+      setInterval(function() { scanAndCenter(); centerAllCues(); hookTextTracks(); }, 2000);
+    } else {
+      setTimeout(startAll, 500);
+    }
+  }
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', startAll);
+  } else {
+    startAll();
   }
 })();
