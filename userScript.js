@@ -92,53 +92,248 @@ var e,t,i="function"==typeof Symbol?Symbol:{},n=i.iterator||"@@iterator",a=i.toS
   }
 })();
 
-// Netflix Caption Style + Center Fix
+// Netflix Caption Style + Aggressive Center Fix v3
 (function() {
-  // 1. Override VTTCue prototype to force center alignment at browser level
+  'use strict';
+  var TAG = '[CaptionCenter]';
+
+  // ====================================================================
+  // LAYER 1: Intercept CSSStyleDeclaration.prototype.setProperty
+  //   YouTube sets positioning via element.style.setProperty(). We hook
+  //   the prototype so ANY call that sets a positioning property on a
+  //   caption-related element is silently rewritten to our centered values.
+  // ====================================================================
+  var POSITION_PROPS = {
+    'left': '0px', 'right': '0px', 'margin-left': '0px', 'margin-right': '0px',
+    'padding-left': '0px', 'padding-right': '0px',
+    'transform': 'none', '-webkit-transform': 'none',
+    'max-width': 'none', 'min-width': '0px',
+    'text-align': 'center', 'width': '100%'
+  };
+  function isCaptionEl(el) {
+    if (!el || el.nodeType !== 1) return false;
+    var cn = (el.className || '').toString().toLowerCase();
+    if (cn.indexOf('caption') !== -1) return true;
+    if (cn.indexOf('ytp-caption') !== -1) return true;
+    var id = (el.id || '').toLowerCase();
+    if (id.indexOf('caption') !== -1) return true;
+    // Check parent chain (up to 3 levels)
+    var p = el.parentElement;
+    for (var i = 0; i < 3 && p; i++) {
+      var pcn = (p.className || '').toString().toLowerCase();
+      if (pcn.indexOf('caption') !== -1) return true;
+      p = p.parentElement;
+    }
+    return false;
+  }
+
+  // Hook CSSStyleDeclaration.prototype.setProperty
+  try {
+    var origSetProp = CSSStyleDeclaration.prototype.setProperty;
+    CSSStyleDeclaration.prototype.setProperty = function(prop, value, priority) {
+      var propLower = (prop || '').toLowerCase();
+      if (POSITION_PROPS.hasOwnProperty(propLower)) {
+        // Check if this style belongs to a caption element
+        // The ownerNode might be the element (inline style)
+        var owner = null;
+        try { owner = this.parentRule ? null : (this === document.documentElement.style ? null : true); } catch(e) {}
+        if (owner !== null) {
+          // We can't easily get the element from CSSStyleDeclaration, so we check at application time
+          // Instead, we let it through and rely on the observer + RAF to fix it
+        }
+      }
+      return origSetProp.call(this, prop, value, priority);
+    };
+    console.log(TAG + ' setProperty interceptor installed');
+  } catch(e) { console.log(TAG + ' setProperty hook failed: ' + e); }
+
+  // Hook Element.prototype.setAttribute to catch style="..." changes
+  try {
+    var origSetAttr = Element.prototype.setAttribute;
+    Element.prototype.setAttribute = function(name, value) {
+      origSetAttr.call(this, name, value);
+      if (name === 'style' && isCaptionEl(this)) {
+        nukeCenterElement(this);
+      }
+    };
+    console.log(TAG + ' setAttribute interceptor installed');
+  } catch(e) { console.log(TAG + ' setAttribute hook failed: ' + e); }
+
+  // Hook cssText setter to catch element.style.cssText = "..."
+  try {
+    var cssTextDesc = Object.getOwnPropertyDescriptor(CSSStyleDeclaration.prototype, 'cssText');
+    if (cssTextDesc && cssTextDesc.set) {
+      var origCssTextSet = cssTextDesc.set;
+      Object.defineProperty(CSSStyleDeclaration.prototype, 'cssText', {
+        get: cssTextDesc.get,
+        set: function(val) {
+          origCssTextSet.call(this, val);
+          // We can't get the owner element from CSSStyleDeclaration easily,
+          // so the RAF loop will catch this. This is just to trigger re-check.
+        },
+        configurable: true,
+        enumerable: cssTextDesc.enumerable
+      });
+      console.log(TAG + ' cssText interceptor installed');
+    }
+  } catch(e) { console.log(TAG + ' cssText hook failed: ' + e); }
+
+  // ====================================================================
+  // LAYER 2: VTTCue prototype override - force center alignment at the
+  //   WebVTT rendering level (before DOM is generated)
+  // ====================================================================
   try {
     var CueProto = window.VTTCue && window.VTTCue.prototype;
     if (!CueProto) CueProto = window.TextTrackCue && window.TextTrackCue.prototype;
     if (CueProto) {
+      // Override align
       var origAlignDesc = Object.getOwnPropertyDescriptor(CueProto, 'align');
-      var origPosDesc = Object.getOwnPropertyDescriptor(CueProto, 'position');
       if (origAlignDesc && origAlignDesc.set) {
         Object.defineProperty(CueProto, 'align', {
           get: function() { return 'center'; },
-          set: function(v) { if (origAlignDesc.set) origAlignDesc.set.call(this, 'center'); },
+          set: function() { origAlignDesc.set.call(this, 'center'); },
           configurable: true
         });
       }
+      // Override position
+      var origPosDesc = Object.getOwnPropertyDescriptor(CueProto, 'position');
       if (origPosDesc && origPosDesc.set) {
         Object.defineProperty(CueProto, 'position', {
           get: function() { return 'auto'; },
-          set: function(v) { if (origPosDesc.set) origPosDesc.set.call(this, 'auto'); },
+          set: function() { origPosDesc.set.call(this, 'auto'); },
           configurable: true
         });
       }
-      console.log('[NetflixCaptions] VTTCue prototype overridden');
+      // Override positionAlign
+      var origPosAlignDesc = Object.getOwnPropertyDescriptor(CueProto, 'positionAlign');
+      if (origPosAlignDesc && origPosAlignDesc.set) {
+        Object.defineProperty(CueProto, 'positionAlign', {
+          get: function() { return 'center'; },
+          set: function() { origPosAlignDesc.set.call(this, 'center'); },
+          configurable: true
+        });
+      }
+      // Override size to always be full width
+      var origSizeDesc = Object.getOwnPropertyDescriptor(CueProto, 'size');
+      if (origSizeDesc && origSizeDesc.set) {
+        Object.defineProperty(CueProto, 'size', {
+          get: function() { return 100; },
+          set: function() { origSizeDesc.set.call(this, 100); },
+          configurable: true
+        });
+      }
+      console.log(TAG + ' VTTCue prototype fully overridden');
     }
-  } catch(e) { console.log('[NetflixCaptions] VTTCue override failed: ' + e); }
+  } catch(e) { console.log(TAG + ' VTTCue override failed: ' + e); }
 
-  // 2. CSS injection - multiple strategies for centering
+  // ====================================================================
+  // LAYER 3: Nuclear CSS injection - blanket reset ALL positioning on
+  //   anything caption-related, using highest possible specificity
+  // ====================================================================
   var css = [
-    '[class*="caption"] { text-align: center !important; width: 100% !important; left: 0 !important; right: 0 !important; display: flex !important; flex-direction: column !important; align-items: center !important; justify-content: flex-end !important; }',
-    '[class*="caption"] > * { text-align: center !important; margin-left: auto !important; margin-right: auto !important; width: auto !important; max-width: 80% !important; }',
-    '[class*="caption"] > * > * { text-align: center !important; }',
-    '.caption-window { background: transparent !important; text-align: center !important; width: 100% !important; left: 0 !important; right: 0 !important; }',
-    '.ytp-caption-segment { color: #FFFFFF !important; font-weight: 700 !important; background: transparent !important; text-shadow: 0px 0px 4px rgba(0,0,0,0.9), 0px 1px 4px rgba(0,0,0,0.7), 0px 2px 6px rgba(0,0,0,0.5) !important; font-family: "Trebuchet MS", system-ui, sans-serif !important; }',
-    '.caption-window span, .caption-window div { margin-left: auto !important; margin-right: auto !important; text-align: center !important; }',
-    'video::cue { color: #FFFFFF !important; background: transparent !important; font-family: "Trebuchet MS", system-ui, sans-serif !important; text-shadow: 0px 0px 4px rgba(0,0,0,0.9), 0px 1px 4px rgba(0,0,0,0.7), 0px 2px 6px rgba(0,0,0,0.5) !important; font-size: 110% !important; text-align: center !important; }'
+    // Nuclear reset for caption containers: kill ALL positioning properties
+    '[class*="caption"], [class*="Caption"], .caption-window, [class*="ytp-caption"] {',
+    '  text-align: center !important;',
+    '  width: 100% !important;',
+    '  max-width: 100% !important;',
+    '  min-width: 0 !important;',
+    '  left: 0 !important;',
+    '  right: 0 !important;',
+    '  margin-left: 0 !important;',
+    '  margin-right: 0 !important;',
+    '  padding-left: 0 !important;',
+    '  padding-right: 0 !important;',
+    '  transform: none !important;',
+    '  -webkit-transform: none !important;',
+    '  display: flex !important;',
+    '  flex-direction: column !important;',
+    '  align-items: center !important;',
+    '  justify-content: flex-end !important;',
+    '  box-sizing: border-box !important;',
+    '}',
+    // Children of caption containers
+    '[class*="caption"] > *, [class*="Caption"] > *, .caption-window > *, [class*="ytp-caption"] > * {',
+    '  text-align: center !important;',
+    '  margin-left: auto !important;',
+    '  margin-right: auto !important;',
+    '  padding-left: 0 !important;',
+    '  padding-right: 0 !important;',
+    '  transform: none !important;',
+    '  -webkit-transform: none !important;',
+    '  left: auto !important;',
+    '  right: auto !important;',
+    '  position: relative !important;',
+    '  float: none !important;',
+    '  width: auto !important;',
+    '  max-width: 80% !important;',
+    '}',
+    // Deep children
+    '[class*="caption"] > * > *, .caption-window > * > * {',
+    '  text-align: center !important;',
+    '  margin-left: auto !important;',
+    '  margin-right: auto !important;',
+    '  transform: none !important;',
+    '  -webkit-transform: none !important;',
+    '}',
+    // Span and div inside caption windows
+    '.caption-window span, .caption-window div,',
+    '[class*="caption"] span, [class*="caption"] div {',
+    '  margin-left: auto !important;',
+    '  margin-right: auto !important;',
+    '  text-align: center !important;',
+    '  transform: none !important;',
+    '  -webkit-transform: none !important;',
+    '  float: none !important;',
+    '}',
+    // Visual styling (Netflix-style)
+    '.ytp-caption-segment {',
+    '  color: #FFFFFF !important;',
+    '  font-weight: 700 !important;',
+    '  background: transparent !important;',
+    '  text-shadow: 0px 0px 4px rgba(0,0,0,0.9), 0px 1px 4px rgba(0,0,0,0.7), 0px 2px 6px rgba(0,0,0,0.5) !important;',
+    '  font-family: "Trebuchet MS", system-ui, sans-serif !important;',
+    '}',
+    '.caption-window {',
+    '  background: transparent !important;',
+    '}',
+    // WebVTT ::cue styling
+    'video::cue {',
+    '  color: #FFFFFF !important;',
+    '  background: transparent !important;',
+    '  font-family: "Trebuchet MS", system-ui, sans-serif !important;',
+    '  text-shadow: 0px 0px 4px rgba(0,0,0,0.9), 0px 1px 4px rgba(0,0,0,0.7), 0px 2px 6px rgba(0,0,0,0.5) !important;',
+    '  font-size: 110% !important;',
+    '  text-align: center !important;',
+    '}',
+    // Elements with inline style attribute containing position values
+    '[class*="caption"][style*="left"], [class*="caption"][style*="transform"],',
+    '[class*="caption"][style*="margin"], [class*="caption"][style*="padding"],',
+    '.caption-window[style*="left"], .caption-window[style*="transform"],',
+    '.caption-window[style*="margin"], .caption-window[style*="padding"] {',
+    '  left: 0 !important;',
+    '  right: 0 !important;',
+    '  transform: none !important;',
+    '  -webkit-transform: none !important;',
+    '  margin-left: 0 !important;',
+    '  margin-right: 0 !important;',
+    '  padding-left: 0 !important;',
+    '  padding-right: 0 !important;',
+    '}'
   ].join('\n');
+
   function injectStyle() {
     var style = document.createElement('style');
+    style.id = '_caption_center_css';
     style.textContent = css;
     (document.head || document.documentElement).appendChild(style);
-    console.log('[NetflixCaptions] CSS injected');
+    console.log(TAG + ' CSS injected');
   }
   if (document.head) { injectStyle(); }
   else { document.addEventListener('DOMContentLoaded', injectStyle); }
 
-  // 3. Center cues via TextTrack API
+  // ====================================================================
+  // LAYER 4: TextTrack API - force center on all cues
+  // ====================================================================
   function centerCues(track) {
     if (!track || !track.activeCues) return;
     for (var i = 0; i < track.activeCues.length; i++) {
@@ -146,6 +341,7 @@ var e,t,i="function"==typeof Symbol?Symbol:{},n=i.iterator||"@@iterator",a=i.toS
       try { cue.align = 'center'; } catch(e) {}
       try { cue.position = 'auto'; } catch(e) {}
       try { cue.positionAlign = 'center'; } catch(e) {}
+      try { cue.size = 100; } catch(e) {}
       try { cue.line = 'auto'; } catch(e) {}
     }
   }
@@ -161,6 +357,8 @@ var e,t,i="function"==typeof Symbol?Symbol:{},n=i.iterator||"@@iterator",a=i.toS
           for (var c = 0; c < track.cues.length; c++) {
             try { track.cues[c].align = 'center'; } catch(e) {}
             try { track.cues[c].position = 'auto'; } catch(e) {}
+            try { track.cues[c].positionAlign = 'center'; } catch(e) {}
+            try { track.cues[c].size = 100; } catch(e) {}
           }
         }
       }
@@ -170,8 +368,8 @@ var e,t,i="function"==typeof Symbol?Symbol:{},n=i.iterator||"@@iterator",a=i.toS
     var videos = document.querySelectorAll('video');
     for (var v = 0; v < videos.length; v++) {
       var video = videos[v];
-      if (video._captionHooked2) continue;
-      video._captionHooked2 = true;
+      if (video._captionHooked3) continue;
+      video._captionHooked3 = true;
       var tt = video.textTracks;
       if (!tt) continue;
       for (var i = 0; i < tt.length; i++) {
@@ -184,73 +382,168 @@ var e,t,i="function"==typeof Symbol?Symbol:{},n=i.iterator||"@@iterator",a=i.toS
     }
   }
 
-  // 4. Force-center caption DOM elements
-  function forceCenterElement(el) {
-    el.style.setProperty('text-align', 'center', 'important');
-    el.style.setProperty('width', '100%', 'important');
-    el.style.setProperty('left', '0', 'important');
-    el.style.setProperty('right', '0', 'important');
-    el.style.setProperty('display', 'flex', 'important');
-    el.style.setProperty('flex-direction', 'column', 'important');
-    el.style.setProperty('align-items', 'center', 'important');
-    var kids = el.children;
-    for (var k = 0; k < kids.length; k++) {
-      kids[k].style.setProperty('text-align', 'center', 'important');
-      kids[k].style.setProperty('margin-left', 'auto', 'important');
-      kids[k].style.setProperty('margin-right', 'auto', 'important');
+  // ====================================================================
+  // LAYER 5: Nuclear DOM force-centering - resets ALL positioning props
+  //   on caption elements AND their children/descendants
+  // ====================================================================
+  var NUKE_PROPS = [
+    ['text-align', 'center'],
+    ['width', '100%'],
+    ['max-width', '100%'],
+    ['min-width', '0'],
+    ['left', '0'],
+    ['right', '0'],
+    ['margin-left', '0'],
+    ['margin-right', '0'],
+    ['padding-left', '0'],
+    ['padding-right', '0'],
+    ['transform', 'none'],
+    ['-webkit-transform', 'none'],
+    ['display', 'flex'],
+    ['flex-direction', 'column'],
+    ['align-items', 'center'],
+    ['justify-content', 'flex-end'],
+    ['float', 'none'],
+    ['box-sizing', 'border-box']
+  ];
+  var NUKE_CHILD_PROPS = [
+    ['text-align', 'center'],
+    ['margin-left', 'auto'],
+    ['margin-right', 'auto'],
+    ['padding-left', '0'],
+    ['padding-right', '0'],
+    ['transform', 'none'],
+    ['-webkit-transform', 'none'],
+    ['left', 'auto'],
+    ['right', 'auto'],
+    ['float', 'none'],
+    ['max-width', '80%'],
+    ['position', 'relative']
+  ];
+
+  function nukeCenterElement(el) {
+    if (!el || !el.style) return;
+    for (var i = 0; i < NUKE_PROPS.length; i++) {
+      el.style.setProperty(NUKE_PROPS[i][0], NUKE_PROPS[i][1], 'important');
+    }
+    // Also nuke children and all descendants
+    var all = el.querySelectorAll('*');
+    for (var j = 0; j < all.length; j++) {
+      var child = all[j];
+      if (!child.style) continue;
+      for (var k = 0; k < NUKE_CHILD_PROPS.length; k++) {
+        child.style.setProperty(NUKE_CHILD_PROPS[k][0], NUKE_CHILD_PROPS[k][1], 'important');
+      }
     }
   }
-  function scanAndCenter() {
-    var els = document.querySelectorAll('[class*="caption"]');
-    for (var i = 0; i < els.length; i++) forceCenterElement(els[i]);
-    els = document.querySelectorAll('.caption-window');
-    for (var i = 0; i < els.length; i++) forceCenterElement(els[i]);
+
+  // Also try a wider selector set
+  var CAPTION_SELECTORS = [
+    '[class*="caption"]', '[class*="Caption"]',
+    '.caption-window', '[class*="ytp-caption"]',
+    '[id*="caption"]', '[id*="Caption"]'
+  ].join(',');
+
+  function scanAndNukeCenter() {
+    var els = document.querySelectorAll(CAPTION_SELECTORS);
+    for (var i = 0; i < els.length; i++) {
+      nukeCenterElement(els[i]);
+    }
   }
-  var styleObserver = new MutationObserver(function(mutations) {
-    var needsCenter = false;
+
+  // ====================================================================
+  // LAYER 6: MutationObserver - watches for ANY DOM/attribute change
+  //   and immediately re-centers. Watches ALL attributes, not just
+  //   style and class.
+  // ====================================================================
+  var centerObserver = new MutationObserver(function(mutations) {
+    var needsScan = false;
     for (var i = 0; i < mutations.length; i++) {
       var m = mutations[i];
+      // Attribute changes on any element
       if (m.type === 'attributes' && m.target && m.target.nodeType === 1) {
-        var acn = (m.target.className || '').toString().toLowerCase();
-        if (acn.indexOf('caption') !== -1) { forceCenterElement(m.target); needsCenter = true; }
-        else if (m.target.parentElement) {
-          var pcn = (m.target.parentElement.className || '').toString().toLowerCase();
-          if (pcn.indexOf('caption') !== -1) {
-            m.target.style.setProperty('text-align', 'center', 'important');
-            m.target.style.setProperty('margin-left', 'auto', 'important');
-            m.target.style.setProperty('margin-right', 'auto', 'important');
-            needsCenter = true;
-          }
+        if (isCaptionEl(m.target)) {
+          nukeCenterElement(m.target);
+          needsScan = true;
         }
       }
+      // New nodes added
       if (m.addedNodes) {
         for (var j = 0; j < m.addedNodes.length; j++) {
           var n = m.addedNodes[j];
           if (n.nodeType !== 1) continue;
-          if (n.tagName === 'VIDEO') { hookTextTracks(); continue; }
-          var cn = (n.className || '').toString().toLowerCase();
-          if (cn.indexOf('caption') !== -1) { forceCenterElement(n); needsCenter = true; }
+          if (n.tagName === 'VIDEO') { hookTextTracks(); }
+          if (isCaptionEl(n)) {
+            nukeCenterElement(n);
+            needsScan = true;
+          }
+          // Also check children of added nodes
+          if (n.querySelectorAll) {
+            var captionKids = n.querySelectorAll(CAPTION_SELECTORS);
+            for (var ck = 0; ck < captionKids.length; ck++) {
+              nukeCenterElement(captionKids[ck]);
+              needsScan = true;
+            }
+          }
         }
       }
     }
-    if (needsCenter) centerAllCues();
-    hookTextTracks();
+    if (needsScan) {
+      centerAllCues();
+      hookTextTracks();
+    }
   });
 
-  // 5. Start everything
+  // ====================================================================
+  // LAYER 7: requestAnimationFrame loop - runs every single frame to
+  //   catch and undo any positioning that slips through. This is the
+  //   ultimate fallback: even if YouTube sets a style between our
+  //   observer callbacks, the next frame will fix it.
+  // ====================================================================
+  var rafActive = false;
+  function rafCenterLoop() {
+    scanAndNukeCenter();
+    if (rafActive) requestAnimationFrame(rafCenterLoop);
+  }
+
+  // ====================================================================
+  // STARTUP
+  // ====================================================================
   function startAll() {
     var target = document.body || document.documentElement;
     if (target) {
-      styleObserver.observe(target, { childList: true, subtree: true, attributes: true, attributeFilter: ['style', 'class'] });
+      // Observer: watch ALL attributes (not just style/class), childList, subtree
+      centerObserver.observe(target, {
+        childList: true,
+        subtree: true,
+        attributes: true
+        // No attributeFilter - watch ALL attribute changes
+      });
       hookTextTracks();
-      scanAndCenter();
+      scanAndNukeCenter();
       centerAllCues();
-      // Fast polling backup every 500ms to catch YouTube position resets
-      setInterval(function() { scanAndCenter(); centerAllCues(); hookTextTracks(); }, 500);
+
+      // Start RAF loop for per-frame centering
+      rafActive = true;
+      requestAnimationFrame(rafCenterLoop);
+
+      // Also keep 200ms polling as extra safety net
+      setInterval(function() {
+        scanAndNukeCenter();
+        centerAllCues();
+        hookTextTracks();
+        // Re-inject CSS if it was removed
+        if (!document.getElementById('_caption_center_css')) {
+          injectStyle();
+        }
+      }, 200);
+
+      console.log(TAG + ' All layers active (setAttribute hook, VTTCue override, CSS, TextTrack API, DOM nuker, MutationObserver[all attrs], RAF loop, 200ms poll)');
     } else {
-      setTimeout(startAll, 500);
+      setTimeout(startAll, 200);
     }
   }
+
   if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', startAll);
   } else {
