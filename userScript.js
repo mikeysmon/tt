@@ -91,3 +91,22 @@ var e,t,i="function"==typeof Symbol?Symbol:{},n=i.iterator||"@@iterator",a=i.toS
     startObserving();
   }
 })();
+
+// Netflix Caption Style Injector
+(function() {
+  var css = [
+    '[class*="caption"] { text-align: center !important; }',
+    '[class*="caption"] * { text-align: center !important; }',
+    '.caption-window { background: transparent !important; text-align: center !important; }',
+    '.ytp-caption-segment { color: #FFFFFF !important; font-weight: 700 !important; background: transparent !important; text-shadow: 0px 0px 4px rgba(0,0,0,0.9), 0px 1px 4px rgba(0,0,0,0.7), 0px 2px 6px rgba(0,0,0,0.5) !important; font-family: "Trebuchet MS", system-ui, sans-serif !important; }',
+    'video::cue { text-align: center !important; color: #FFFFFF !important; background: transparent !important; font-family: "Trebuchet MS", system-ui, sans-serif !important; text-shadow: 0px 0px 4px rgba(0,0,0,0.9), 0px 1px 4px rgba(0,0,0,0.7), 0px 2px 6px rgba(0,0,0,0.5) !important; }'
+  ].join('\n');
+  function injectStyle() {
+    var style = document.createElement('style');
+    style.textContent = css;
+    (document.head || document.documentElement).appendChild(style);
+    console.log('[NetflixCaptions] CSS injected');
+  }
+  if (document.head) { injectStyle(); }
+  else { document.addEventListener('DOMContentLoaded', injectStyle); }
+})();
