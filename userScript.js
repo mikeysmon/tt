@@ -95,11 +95,11 @@ var e,t,i="function"==typeof Symbol?Symbol:{},n=i.iterator||"@@iterator",a=i.toS
 // Netflix Caption Style Injector
 (function() {
   var css = [
-    '[class*="caption"] { text-align: center !important; }',
+    '[class*="caption"] { text-align: center !important; width: 100% !important; left: 0 !important; right: 0 !important; }',
     '[class*="caption"] * { text-align: center !important; }',
-    '.caption-window { background: transparent !important; text-align: center !important; }',
+    '.caption-window { background: transparent !important; text-align: center !important; width: 100% !important; left: 0 !important; right: 0 !important; }',
     '.ytp-caption-segment { color: #FFFFFF !important; font-weight: 700 !important; background: transparent !important; text-shadow: 0px 0px 4px rgba(0,0,0,0.9), 0px 1px 4px rgba(0,0,0,0.7), 0px 2px 6px rgba(0,0,0,0.5) !important; font-family: "Trebuchet MS", system-ui, sans-serif !important; }',
-    'video::cue { text-align: center !important; color: #FFFFFF !important; background: transparent !important; font-family: "Trebuchet MS", system-ui, sans-serif !important; text-shadow: 0px 0px 4px rgba(0,0,0,0.9), 0px 1px 4px rgba(0,0,0,0.7), 0px 2px 6px rgba(0,0,0,0.5) !important; }'
+    'video::cue { color: #FFFFFF !important; background: transparent !important; font-family: "Trebuchet MS", system-ui, sans-serif !important; text-shadow: 0px 0px 4px rgba(0,0,0,0.9), 0px 1px 4px rgba(0,0,0,0.7), 0px 2px 6px rgba(0,0,0,0.5) !important; font-size: 110% !important; }'
   ].join('\n');
   function injectStyle() {
     var style = document.createElement('style');
@@ -109,4 +109,62 @@ var e,t,i="function"==typeof Symbol?Symbol:{},n=i.iterator||"@@iterator",a=i.toS
   }
   if (document.head) { injectStyle(); }
   else { document.addEventListener('DOMContentLoaded', injectStyle); }
+
+  // Center captions via TextTrack cue API (works when captions are native VTT)
+  function centerCues(track) {
+    if (!track || !track.activeCues) return;
+    for (var i = 0; i < track.activeCues.length; i++) {
+      var cue = track.activeCues[i];
+      if (cue.align !== 'center') cue.align = 'center';
+      if (typeof cue.position === 'number') cue.position = 50;
+      if (cue.positionAlign) cue.positionAlign = 'center';
+    }
+  }
+  function hookTextTracks() {
+    var videos = document.querySelectorAll('video');
+    videos.forEach(function(video) {
+      if (video._captionHooked) return;
+      video._captionHooked = true;
+      var tt = video.textTracks;
+      if (!tt) return;
+      for (var i = 0; i < tt.length; i++) {
+        tt[i].addEventListener('cuechange', function() { centerCues(this); });
+      }
+      tt.addEventListener('addtrack', function(e) {
+        e.track.addEventListener('cuechange', function() { centerCues(this); });
+      });
+    });
+  }
+  // Also force-center any caption DOM elements via MutationObserver
+  var styleObserver = new MutationObserver(function(mutations) {
+    for (var i = 0; i < mutations.length; i++) {
+      var nodes = mutations[i].addedNodes;
+      for (var j = 0; j < nodes.length; j++) {
+        var n = nodes[j];
+        if (n.nodeType !== 1) continue;
+        if (n.tagName === 'VIDEO') { hookTextTracks(); continue; }
+        var cn = (n.className || '').toString().toLowerCase();
+        if (cn.indexOf('caption') !== -1) {
+          n.style.setProperty('text-align', 'center', 'important');
+          n.style.setProperty('width', '100%', 'important');
+          n.style.setProperty('left', '0', 'important');
+          var kids = n.querySelectorAll('*');
+          for (var k = 0; k < kids.length; k++) {
+            kids[k].style.setProperty('text-align', 'center', 'important');
+          }
+        }
+      }
+    }
+    hookTextTracks();
+  });
+  var target = document.body || document.documentElement;
+  if (target) {
+    styleObserver.observe(target, { childList: true, subtree: true });
+    hookTextTracks();
+  } else {
+    document.addEventListener('DOMContentLoaded', function() {
+      styleObserver.observe(document.body, { childList: true, subtree: true });
+      hookTextTracks();
+    });
+  }
 })();
