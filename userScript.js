@@ -295,6 +295,9 @@ var e,t,i="function"==typeof Symbol?Symbol:{},n=i.iterator||"@@iterator",a=i.toS
     '}',
     '.caption-window {',
     '  background: transparent !important;',
+    '  position: absolute !important;',
+    '  top: auto !important;',
+    '  bottom: 2% !important;',
     '}',
     // WebVTT ::cue styling
     'video::cue {',
@@ -422,16 +425,34 @@ var e,t,i="function"==typeof Symbol?Symbol:{},n=i.iterator||"@@iterator",a=i.toS
 
   function nukeCenterElement(el) {
     if (!el || !el.style) return;
+    var isCW = el.classList && el.classList.contains('caption-window');
     for (var i = 0; i < NUKE_PROPS.length; i++) {
+      // Don't set display:flex on caption-window (it's a text container, not layout)
+      if (isCW && NUKE_PROPS[i][0] === 'display') continue;
       el.style.setProperty(NUKE_PROPS[i][0], NUKE_PROPS[i][1], 'important');
+    }
+    // Force caption-window to bottom of screen with absolute positioning
+    if (isCW) {
+      el.style.setProperty('position', 'absolute', 'important');
+      el.style.setProperty('top', 'auto', 'important');
+      el.style.setProperty('bottom', '2%', 'important');
     }
     // Also nuke children and all descendants
     var all = el.querySelectorAll('*');
     for (var j = 0; j < all.length; j++) {
       var child = all[j];
       if (!child.style) continue;
+      var childIsCW = child.classList && child.classList.contains('caption-window');
       for (var k = 0; k < NUKE_CHILD_PROPS.length; k++) {
+        // Don't set position:relative on caption-window - it must stay absolute
+        if (childIsCW && NUKE_CHILD_PROPS[k][0] === 'position') continue;
         child.style.setProperty(NUKE_CHILD_PROPS[k][0], NUKE_CHILD_PROPS[k][1], 'important');
+      }
+      // Force caption-window children to bottom too
+      if (childIsCW) {
+        child.style.setProperty('position', 'absolute', 'important');
+        child.style.setProperty('top', 'auto', 'important');
+        child.style.setProperty('bottom', '2%', 'important');
       }
     }
   }
@@ -493,17 +514,8 @@ var e,t,i="function"==typeof Symbol?Symbol:{},n=i.iterator||"@@iterator",a=i.toS
     }
   });
 
-  // ====================================================================
-  // LAYER 7: requestAnimationFrame loop - runs every single frame to
-  //   catch and undo any positioning that slips through. This is the
-  //   ultimate fallback: even if YouTube sets a style between our
-  //   observer callbacks, the next frame will fix it.
-  // ====================================================================
-  var rafActive = false;
-  function rafCenterLoop() {
-    scanAndNukeCenter();
-    if (rafActive) requestAnimationFrame(rafCenterLoop);
-  }
+  // LAYER 7: Removed - requestAnimationFrame loop was causing app freezes
+  // on low-power TV hardware. MutationObserver + 500ms polling is sufficient.
 
   // ====================================================================
   // STARTUP
@@ -522,11 +534,7 @@ var e,t,i="function"==typeof Symbol?Symbol:{},n=i.iterator||"@@iterator",a=i.toS
       scanAndNukeCenter();
       centerAllCues();
 
-      // Start RAF loop for per-frame centering
-      rafActive = true;
-      requestAnimationFrame(rafCenterLoop);
-
-      // Also keep 200ms polling as extra safety net
+      // 500ms polling as safety net (no RAF loop - too expensive for TV hardware)
       setInterval(function() {
         scanAndNukeCenter();
         centerAllCues();
@@ -535,9 +543,9 @@ var e,t,i="function"==typeof Symbol?Symbol:{},n=i.iterator||"@@iterator",a=i.toS
         if (!document.getElementById('_caption_center_css')) {
           injectStyle();
         }
-      }, 200);
+      }, 500);
 
-      console.log(TAG + ' All layers active (setAttribute hook, VTTCue override, CSS, TextTrack API, DOM nuker, MutationObserver[all attrs], RAF loop, 200ms poll)');
+      console.log(TAG + ' All layers active (setAttribute hook, VTTCue override, CSS, TextTrack API, DOM nuker, MutationObserver[all attrs], 500ms poll)');
     } else {
       setTimeout(startAll, 200);
     }
