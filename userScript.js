@@ -342,7 +342,6 @@ var e,t,i="function"==typeof Symbol?Symbol:{},n=i.iterator||"@@iterator",a=i.toS
       try { cue.position = 'auto'; } catch(e) {}
       try { cue.positionAlign = 'center'; } catch(e) {}
       try { cue.size = 100; } catch(e) {}
-      try { cue.line = 'auto'; } catch(e) {}
     }
   }
   function centerAllCues() {
