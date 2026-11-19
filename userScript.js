@@ -29,11 +29,14 @@ var e,t,i="function"==typeof Symbol?Symbol:{},n=i.iterator||"@@iterator",a=i.toS
     return s.replace(/^(\s*["'‘“(\[♪]*\s*)([a-z])/, function(m, p, c) { return p + c.toUpperCase(); });
   }
 
+  // YouTube's auto-captions arrive with swear words already replaced by "[ __ ]"
+  function unbleep(t) { return t.replace(/\[\s*_+\s*\]/g, '****'); }
+
   // capStart: the text begins a new sentence
   function fixText(text, capStart) {
     if (!text) return text;
-    var t = text
-      .replace(/\bi\b(?!\.\w)/g, 'I')                       // i, i'm, i'll, i've, i'd (not i.e.)
+    var t = unbleep(text)
+      .replace(/\bi\b(?!\.\w)/g, 'I')                     // i, i'm, i'll, i've, i'd (not i.e.)
       .replace(/\b[a-z]+\b/g, function(w) { return Object.prototype.hasOwnProperty.call(WORDS, w) ? WORDS[w] : w; })
       .replace(/(\S*)([.!?]["'’”)\]]*\s+["'‘“(\[]*)([a-z])/g, function(m, w, p, c) {
         return w + p + (ABBR[(w + p.trim().charAt(0)).toLowerCase()] ? c : c.toUpperCase());
@@ -100,7 +103,7 @@ var e,t,i="function"==typeof Symbol?Symbol:{},n=i.iterator||"@@iterator",a=i.toS
       var v = nodes[j].nodeValue;
       if (!v || !/\S/.test(v)) { ctx += v || ''; continue; }
       var capStart = !cased && (ctx.trim() === '' ? first : END.test(ctx));
-      var fixed = cased ? v.replace(/\bi\b(?!\.\w)/g, 'I') : fixText(v, capStart);
+      var fixed = cased ? unbleep(v).replace(/\bi\b(?!\.\w)/g, 'I') : fixText(v, capStart);
       if (fixed !== v) nodes[j].nodeValue = fixed;
       ctx += fixed + ' ';
     }
