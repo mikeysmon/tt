@@ -146,7 +146,7 @@ var e,t,i="function"==typeof Symbol?Symbol:{},n=i.iterator||"@@iterator",a=i.toS
   // Vertical position is left to YouTube: it keeps captions at the bottom and moves them clear of
   // its menus. Horizontally the window spans the screen, because YouTube sizes and centers it for
   // its own smaller text, which pushed the larger text off to the right.
-  function styleWindow(win) {
+  function centerWindow(win) {
     setImp(win, 'left', '0');
     setImp(win, 'right', '0');
     setImp(win, 'width', '100%');
@@ -154,6 +154,10 @@ var e,t,i="function"==typeof Symbol?Symbol:{},n=i.iterator||"@@iterator",a=i.toS
     setImp(win, 'margin-left', '0');
     setImp(win, 'margin-right', '0');
     setImp(win, 'text-align', 'center');
+  }
+
+  function styleWindow(win) {
+    centerWindow(win);
     setImp(win, 'background-color', 'transparent');
     var size = px((window.innerHeight || 1080) * SIZE);
     var segs = win.querySelectorAll('.ytp-caption-segment');
@@ -188,6 +192,19 @@ var e,t,i="function"==typeof Symbol?Symbol:{},n=i.iterator||"@@iterator",a=i.toS
     }
   }
 
+  // YouTube also re-positions caption windows without changing their text (and animates them
+  // every frame while its menus move). For those style-only changes just keep the window
+  // centered: a few reads, and no writes unless YouTube actually moved it sideways.
+  function onMutations(records) {
+    for (var i = 0; i < records.length; i++) {
+      if (records[i].type !== 'attributes') return process();
+    }
+    for (var j = 0; j < records.length; j++) {
+      var t = records[j].target;
+      if (t.classList && t.classList.contains('caption-window')) centerWindow(t);
+    }
+  }
+
   function attach() {
     var c = document.querySelector('.ytp-caption-window-container');
     if (c === container) return;
@@ -195,10 +212,9 @@ var e,t,i="function"==typeof Symbol?Symbol:{},n=i.iterator||"@@iterator",a=i.toS
     container = c;
     if (!c) return;
     injectStyle();
-    // Text changes only: YouTube animates caption position while its menus move, and
-    // reacting to those style changes is what made navigation lag.
-    containerObserver = new MutationObserver(process);
-    containerObserver.observe(c, { childList: true, subtree: true, characterData: true });
+    containerObserver = new MutationObserver(onMutations);
+    containerObserver.observe(c, { childList: true, subtree: true, characterData: true,
+                                   attributes: true, attributeFilter: ['style'] });
     process();
     console.log(TAG + ' attached to caption container');
   }
