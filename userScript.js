@@ -109,8 +109,9 @@ var e,t,i="function"==typeof Symbol?Symbol:{},n=i.iterator||"@@iterator",a=i.toS
   }
 
   // --------------------------------------------------------------- style
-  var SHADOW = '0px 2px 4px rgba(0, 0, 0, 0.75), 0px 0px 2px rgba(0, 0, 0, 0.9)';
-  var SIZE = 0.042;  // of screen height
+  // crisp dark edge + soft glow, readable on bright and busy backgrounds
+  var SHADOW = '0px 0px 2px rgb(0, 0, 0), 0px 1px 3px rgba(0, 0, 0, 0.9), 0px 3px 10px rgba(0, 0, 0, 0.55)';
+  var SIZE = 0.046;  // of screen height
   function px(n) { return Math.round(n) + 'px'; }
 
   var css = [
@@ -142,8 +143,16 @@ var e,t,i="function"==typeof Symbol?Symbol:{},n=i.iterator||"@@iterator",a=i.toS
     applied[prop] = el.style.getPropertyValue(prop);
   }
 
-  // Position is left to YouTube: it keeps captions at the bottom and moves them clear of its menus.
+  // Vertical position is left to YouTube: it keeps captions at the bottom and moves them clear of
+  // its menus. Horizontally the window spans the screen, because YouTube sizes and centers it for
+  // its own smaller text, which pushed the larger text off to the right.
   function styleWindow(win) {
+    setImp(win, 'left', '0');
+    setImp(win, 'right', '0');
+    setImp(win, 'width', '100%');
+    setImp(win, 'max-width', '100%');
+    setImp(win, 'margin-left', '0');
+    setImp(win, 'margin-right', '0');
     setImp(win, 'text-align', 'center');
     setImp(win, 'background-color', 'transparent');
     var size = px((window.innerHeight || 1080) * SIZE);
@@ -155,6 +164,7 @@ var e,t,i="function"==typeof Symbol?Symbol:{},n=i.iterator||"@@iterator",a=i.toS
       setImp(segs[i], 'font-weight', '500');
       setImp(segs[i], 'font-family', 'Roboto, Arial, sans-serif');
       setImp(segs[i], 'letter-spacing', '0.01em');
+      setImp(segs[i], 'line-height', '1.3');
       setImp(segs[i], 'text-shadow', SHADOW);
     }
   }
