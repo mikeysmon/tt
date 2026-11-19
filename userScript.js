@@ -109,23 +109,18 @@ var e,t,i="function"==typeof Symbol?Symbol:{},n=i.iterator||"@@iterator",a=i.toS
   }
 
   // --------------------------------------------------------------- style
-  var BOTTOM = '7%';
-  var SHADOW = '0px 0px 6px rgba(0, 0, 0, 0.85), 0px 2px 3px rgba(0, 0, 0, 0.9), 1px 1px 1px rgb(0, 0, 0)';
+  var SHADOW = '0px 2px 4px rgba(0, 0, 0, 0.75), 0px 0px 2px rgba(0, 0, 0, 0.9)';
+  var SIZE = 0.042;  // of screen height
   function px(n) { return Math.round(n) + 'px'; }
 
   var css = [
-    '.ytp-caption-window-container .caption-window {',
-    '  left: 0 !important; right: 0 !important; width: 100% !important; max-width: 100% !important;',
-    '  margin-left: 0 !important; margin-right: 0 !important; transform: none !important;',
-    '  text-align: center !important; background: transparent !important; top: auto !important;',
-    '}',
+    '.ytp-caption-window-container .caption-window { text-align: center !important; background: transparent !important; }',
     '.ytp-caption-window-container .captions-text,',
     '.ytp-caption-window-container .caption-visual-line { background: transparent !important; }',
     '.ytp-caption-segment {',
-    '  color: #FFFFFF !important; background: transparent !important; font-weight: 700 !important;',
-    '  font-family: Roboto, "Helvetica Neue", Arial, sans-serif !important;',
-    '  text-shadow: 0 0 6px rgba(0,0,0,0.85), 0 2px 3px rgba(0,0,0,0.9), 1px 1px 1px #000 !important;',
-    '  padding: 0 0.15em !important;',
+    '  color: #FFFFFF !important; background: transparent !important; font-weight: 500 !important;',
+    '  font-family: Roboto, Arial, sans-serif !important; letter-spacing: 0.01em !important;',
+    '  text-shadow: ' + SHADOW + ' !important;',
     '}'
   ].join('\n');
 
@@ -147,57 +142,40 @@ var e,t,i="function"==typeof Symbol?Symbol:{},n=i.iterator||"@@iterator",a=i.toS
     applied[prop] = el.style.getPropertyValue(prop);
   }
 
-  // YouTube lifts captions above the player controls; keep that lift, otherwise sit at BOTTOM.
-  function liftedByYouTube(win, container) {
-    var b = win.style.getPropertyValue('bottom');
-    if (!b || win.style.getPropertyPriority('bottom') === 'important') return false;
-    var n = parseFloat(b);
-    if (/%$/.test(b)) return n > 15;
-    if (/px$/.test(b) && container.clientHeight) return n / container.clientHeight > 0.15;
-    return false;
-  }
-
-  function styleWindow(win, container) {
-    if (!liftedByYouTube(win, container)) setImp(win, 'bottom', BOTTOM);
-    setImp(win, 'top', 'auto');
-    setImp(win, 'left', '0');
-    setImp(win, 'right', '0');
-    setImp(win, 'width', '100%');
-    setImp(win, 'max-width', '100%');
-    setImp(win, 'margin-left', '0');
-    setImp(win, 'margin-right', '0');
-    setImp(win, 'transform', 'none');
+  // Position is left to YouTube: it keeps captions at the bottom and moves them clear of its menus.
+  function styleWindow(win) {
     setImp(win, 'text-align', 'center');
     setImp(win, 'background-color', 'transparent');
-    var size = px((window.innerHeight || 1080) * 0.045);
+    var size = px((window.innerHeight || 1080) * SIZE);
     var segs = win.querySelectorAll('.ytp-caption-segment');
     for (var i = 0; i < segs.length; i++) {
       setImp(segs[i], 'font-size', size);
       setImp(segs[i], 'background-color', 'transparent');
       setImp(segs[i], 'color', '#FFFFFF');
-      setImp(segs[i], 'font-weight', 'bold');
+      setImp(segs[i], 'font-weight', '500');
       setImp(segs[i], 'font-family', 'Roboto, Arial, sans-serif');
+      setImp(segs[i], 'letter-spacing', '0.01em');
       setImp(segs[i], 'text-shadow', SHADOW);
     }
   }
 
   // ------------------------------------------------------------ plumbing
-  var container = null, containerObserver = null, pending = false;
+  var container = null, containerObserver = null, busy = false;
 
+  // Runs inside the observer callback, before the frame is drawn, so YouTube's own
+  // lowercase text and black box never reach the screen.
   function process() {
-    pending = false;
-    if (!container) return;
-    var wins = container.querySelectorAll('.caption-window');
-    for (var i = 0; i < wins.length; i++) {
-      try { fixWindowText(wins[i]); } catch (e) { console.log(TAG + ' text: ' + e); }
-      try { styleWindow(wins[i], container); } catch (e) { console.log(TAG + ' style: ' + e); }
+    if (busy || !container) return;
+    busy = true;
+    try {
+      var wins = container.querySelectorAll('.caption-window');
+      for (var i = 0; i < wins.length; i++) {
+        try { fixWindowText(wins[i]); } catch (e) { console.log(TAG + ' text: ' + e); }
+        try { styleWindow(wins[i]); } catch (e) { console.log(TAG + ' style: ' + e); }
+      }
+    } finally {
+      busy = false;
     }
-  }
-
-  function schedule() {
-    if (pending) return;
-    pending = true;
-    setTimeout(process, 0);
   }
 
   function attach() {
@@ -207,10 +185,11 @@ var e,t,i="function"==typeof Symbol?Symbol:{},n=i.iterator||"@@iterator",a=i.toS
     container = c;
     if (!c) return;
     injectStyle();
-    containerObserver = new MutationObserver(schedule);
-    containerObserver.observe(c, { childList: true, subtree: true, characterData: true,
-                                   attributes: true, attributeFilter: ['style'] });
-    schedule();
+    // Text changes only: YouTube animates caption position while its menus move, and
+    // reacting to those style changes is what made navigation lag.
+    containerObserver = new MutationObserver(process);
+    containerObserver.observe(c, { childList: true, subtree: true, characterData: true });
+    process();
     console.log(TAG + ' attached to caption container');
   }
 
