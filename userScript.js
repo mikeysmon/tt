@@ -109,18 +109,30 @@ var e,t,i="function"==typeof Symbol?Symbol:{},n=i.iterator||"@@iterator",a=i.toS
   }
 
   // --------------------------------------------------------------- style
-  // crisp dark edge + soft glow, readable on bright and busy backgrounds
-  var SHADOW = '0px 0px 2px rgb(0, 0, 0), 0px 1px 3px rgba(0, 0, 0, 0.9), 0px 3px 10px rgba(0, 0, 0, 0.55)';
-  var SIZE = 0.046;  // of screen height
+  // Netflix look: Inter SemiBold with a soft layered shadow
+  var SHADOW = '0px 0px 2px rgba(0, 0, 0, 0.9), 0px 2px 6px rgba(0, 0, 0, 0.7), 0px 4px 16px rgba(0, 0, 0, 0.45)';
+  var SIZE = 0.05;  // of screen height
+  var FONT = 'Inter, Roboto, Arial, sans-serif';
+  var weight = '500';  // Roboto Medium until Inter has downloaded
   function px(n) { return Math.round(n) + 'px'; }
+
+  try {
+    new FontFace('Inter', 'url(https://cdn.jsdelivr.net/npm/@fontsource/inter@5.0.16/files/inter-latin-600-normal.woff2)',
+                 { weight: '600' }).load().then(function(f) {
+      document.fonts.add(f);
+      weight = '600';
+      process();
+      console.log(TAG + ' Inter loaded');
+    }, function(e) { console.log(TAG + ' Inter failed, using Roboto: ' + e); });
+  } catch (e) { console.log(TAG + ' FontFace unavailable, using Roboto: ' + e); }
 
   var css = [
     '.ytp-caption-window-container .caption-window { text-align: center !important; background: transparent !important; }',
     '.ytp-caption-window-container .captions-text,',
     '.ytp-caption-window-container .caption-visual-line { background: transparent !important; }',
     '.ytp-caption-segment {',
-    '  color: #FFFFFF !important; background: transparent !important; font-weight: 500 !important;',
-    '  font-family: Roboto, Arial, sans-serif !important; letter-spacing: 0.01em !important;',
+    '  color: #FFFFFF !important; background: transparent !important;',
+    '  font-family: ' + FONT + ' !important; letter-spacing: -0.005em !important;',
     '  text-shadow: ' + SHADOW + ' !important;',
     '}'
   ].join('\n');
@@ -165,9 +177,9 @@ var e,t,i="function"==typeof Symbol?Symbol:{},n=i.iterator||"@@iterator",a=i.toS
       setImp(segs[i], 'font-size', size);
       setImp(segs[i], 'background-color', 'transparent');
       setImp(segs[i], 'color', '#FFFFFF');
-      setImp(segs[i], 'font-weight', '500');
-      setImp(segs[i], 'font-family', 'Roboto, Arial, sans-serif');
-      setImp(segs[i], 'letter-spacing', '0.01em');
+      setImp(segs[i], 'font-weight', weight);
+      setImp(segs[i], 'font-family', FONT);
+      setImp(segs[i], 'letter-spacing', '-0.005em');
       setImp(segs[i], 'line-height', '1.3');
       setImp(segs[i], 'text-shadow', SHADOW);
     }
