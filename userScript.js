@@ -110,6 +110,7 @@ var e,t,i="function"==typeof Symbol?Symbol:{},n=i.iterator||"@@iterator",a=i.toS
 
   // --------------------------------------------------------------- style
   var BOTTOM = '7%';
+  var SHADOW = '0px 0px 6px rgba(0, 0, 0, 0.85), 0px 2px 3px rgba(0, 0, 0, 0.9), 1px 1px 1px rgb(0, 0, 0)';
   function px(n) { return Math.round(n) + 'px'; }
 
   var css = [
@@ -136,10 +137,14 @@ var e,t,i="function"==typeof Symbol?Symbol:{},n=i.iterator||"@@iterator",a=i.toS
     (document.head || document.documentElement).appendChild(s);
   }
 
+  // Engines normalize values (#FFFFFF -> rgb(...)), so compare with what was stored last time,
+  // not with what was asked for; otherwise every pass rewrites the style and re-triggers the observer.
   function setImp(el, prop, val) {
-    if (el.style.getPropertyValue(prop) !== val || el.style.getPropertyPriority(prop) !== 'important') {
-      el.style.setProperty(prop, val, 'important');
-    }
+    var applied = el.__c5 || (el.__c5 = {});
+    if (applied[prop] !== undefined && el.style.getPropertyValue(prop) === applied[prop]
+        && el.style.getPropertyPriority(prop) === 'important') return;
+    el.style.setProperty(prop, val, 'important');
+    applied[prop] = el.style.getPropertyValue(prop);
   }
 
   // YouTube lifts captions above the player controls; keep that lift, otherwise sit at BOTTOM.
@@ -170,6 +175,9 @@ var e,t,i="function"==typeof Symbol?Symbol:{},n=i.iterator||"@@iterator",a=i.toS
       setImp(segs[i], 'font-size', size);
       setImp(segs[i], 'background-color', 'transparent');
       setImp(segs[i], 'color', '#FFFFFF');
+      setImp(segs[i], 'font-weight', 'bold');
+      setImp(segs[i], 'font-family', 'Roboto, Arial, sans-serif');
+      setImp(segs[i], 'text-shadow', SHADOW);
     }
   }
 
